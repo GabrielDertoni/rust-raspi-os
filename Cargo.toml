@@ -1,0 +1,15 @@
+[package]
+name = "rasp3-os"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+lto = true
+
+[[bin]]
+name = "kernel"
+path = "src/main.rs"
+
+[dependencies]
+cortex-a = "7.0"
+tock-registers = "0.7"
