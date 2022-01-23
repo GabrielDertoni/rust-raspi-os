@@ -78,14 +78,14 @@ impl GPIORegisters {
     }
 
     pub fn set_pin_func(&mut self, pin: u8, func: GPIOFunc) {
-        let bit = (pin * 3) % 30;
+        let bit: u32 = (pin as u32 * 3) % 30;
         let reg_idx = (pin / 10) as usize;
         let mut reg = self.func_select[reg_idx].read();
 
         // Clear the 3 bits of the function select.
         reg &= !(0b111 << bit);
         // Set the bits to the desired values.
-        reg |= ((func as u8) << bit) as u32;
+        reg |= (func as u32) << bit;
 
         self.func_select[reg_idx].write(reg);
     }
