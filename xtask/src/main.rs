@@ -1,9 +1,15 @@
-use std::{ env, io };
+mod utils;
+
+use std::{ env, io, fs };
 use std::process::{ Command, Stdio };
 use std::ops::Not;
 
+use utils::*;
+
 const ARCH: &str = "aarch64-unknown-none-softfloat";
-const KERNEL_OUT: &str = "target/aarch64-unknown-none-softfloat/release/kernel";
+const KERNEL_RELEASE: &str = "target/aarch64-unknown-none-softfloat/release/kernel";
+const KERNEL_DEBUG: &str = "target/aarch64-unknown-none-softfloat/debug/kernel";
+const KERNEL_ELF: &str = "kernel.elf";
 const KERNEL_BIN: &str = "kernel.bin";
 const LINKER_FILE: &str = "src/arch/link.ld";
 
@@ -11,14 +17,19 @@ type AnyErr = Box<dyn std::error::Error>;
 type Result = std::result::Result<(), AnyErr>;
 
 fn main() {
-    let subcommand = std::env::args().nth(1);
+    let subcommand = env::args().nth(1);
+    let args = env::args().skip_while(|arg| arg != "--").skip(1);
+    let is_debug = env::args().find(|arg| arg == "--debug").is_some();
     let res = match subcommand.as_deref() {
-        Some("build") => build(),
-        Some("qemu")  => build().and_then(|_| qemu()),
+        Some("build") => build(is_debug, args),
+        Some("qemu")  => build(is_debug, args).and_then(|_| qemu()),
+        Some("debug") => build(true, args).and_then(|_| qemu()),
+        Some("gdb") => build(true, args).and_then(|_| qemu_gdb()),
 
         _ => {
+            eprintln!("usage: cargo xtask <task>");
             eprintln!("Tasks:");
-            eprintln!("  build - build the OS");
+            eprintln!("    build - build the OS");
             Ok(())
         }
     };
@@ -28,20 +39,25 @@ fn main() {
     }
 }
 
-fn build() -> Result {
+fn build(is_debug: bool, args: impl Iterator<Item = String>) -> Result {
     check_deps()?;
 
-    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
-    if Command::new(cargo)
-        .arg("rustc")
-        .args(&["--target", ARCH])
-        .arg("--release")
-        .arg("--")
-        .args(&["-C", &format!("link-arg=-T{}", LINKER_FILE)])
-        .args(&["-C", "target-cpu=cortex-a53"])
-        .args(&["-C", "relocation-model=static"])
-        .args(&["-D", "warnings"])
+    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.arg("rustc")
+       .args(&["--target", ARCH]);
+    if !is_debug { cmd.arg("--release"); }
+    cmd.arg("--")
+       .args(&["-C", &format!("link-arg=-T{}", LINKER_FILE)])
+       .args(&["-C", "target-cpu=cortex-a53"])
+       .args(&["-C", "relocation-model=static"])
+       .args(&["-D", "warnings"])
+       .args(args);
         // .args(&["-D", "missing_docs"])
+
+    print_command(&cmd);
+
+    if cmd
         .status()?
         .success()
         .not()
@@ -49,11 +65,23 @@ fn build() -> Result {
         return Err("Build failed".into());
     }
 
-    if Command::new("rust-objcopy")
-        .arg("--strip-all")
-        .args(&["-O", "binary"])
-        .arg(KERNEL_OUT)
-        .arg(KERNEL_BIN)
+    if is_debug {
+        print_info(format!("Copy {KERNEL_DEBUG} -> {KERNEL_ELF}"));
+        fs::copy(KERNEL_DEBUG, KERNEL_ELF)?;
+    } else {
+        print_info(format!("Copy {KERNEL_RELEASE} -> {KERNEL_ELF}"));
+        fs::copy(KERNEL_RELEASE, KERNEL_ELF)?;
+    }
+
+    let mut cmd = Command::new("rust-objcopy");
+    cmd.args(&["-O", "binary"]);
+    if !is_debug { cmd.arg("--strip-all"); }
+    cmd.arg(if is_debug { KERNEL_DEBUG } else { KERNEL_RELEASE })
+       .arg(KERNEL_BIN);
+
+    print_command(&cmd);
+
+    if cmd
         .status()?
         .success()
         .not()
@@ -62,6 +90,57 @@ fn build() -> Result {
     }
 
     Ok(())
+}
+
+fn qemu() -> Result {
+    check_qemu()?;
+
+    let mut qemu_cmd = qemu_cmd(KERNEL_BIN);
+    print_command(&qemu_cmd);
+
+    if qemu_cmd
+        .status()?
+        .success()
+        .not()
+    {
+        return Err("Qemu failed".into());
+    }
+
+    Ok(())
+}
+
+fn qemu_gdb() -> Result {
+    check_qemu()?;
+
+    let mut qemu_cmd = qemu_cmd(KERNEL_ELF);
+    qemu_cmd
+        .arg("-S")
+        .arg("-s");
+
+    print_command(&qemu_cmd);
+    print_info("Open gdb and connect to localhost:1234");
+
+    if qemu_cmd
+        .status()?
+        .success()
+        .not()
+    {
+        return Err("Qemu failed".into());
+    }
+
+    Ok(())
+}
+
+fn qemu_cmd(fname: &str) -> Command {
+    let mut qemu_cmd = Command::new("qemu-system-aarch64");
+    qemu_cmd
+        .args(&["-M", "raspi3b"])
+        // .args(&["-d", "in_asm"])
+        .args(&["-display", "none"])
+        .args(&["-serial", "null"])
+        .args(&["-serial", "stdio"])
+        .args(&["-kernel", fname]);
+    qemu_cmd
 }
 
 fn check_deps() -> Result {
@@ -95,26 +174,6 @@ fn check_deps() -> Result {
                 return Err("Failed to add component 'llvm-tools-preview'".into());
             }
         }
-    }
-
-    Ok(())
-}
-
-fn qemu() -> Result {
-    check_qemu()?;
-
-    if Command::new("qemu-system-aarch64")
-        .args(&["-M", "raspi3b"])
-        // .args(&["-d", "in_asm"])
-        .args(&["-display", "none"])
-        .args(&["-serial", "null"])
-        .args(&["-serial", "stdio"])
-        .args(&["-kernel", KERNEL_BIN])
-        .status()?
-        .success()
-        .not()
-    {
-        return Err("Qemu failed".into());
     }
 
     Ok(())
