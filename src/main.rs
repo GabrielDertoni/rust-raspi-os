@@ -6,28 +6,49 @@
 
 #![feature(fmt_internals)]
 #![feature(extern_types)]
-
-#![allow(dead_code)]
+#![feature(format_args_nl)]
 
 mod utils;
 mod boot;
 mod drivers;
 
 use core::panic::PanicInfo;
+use core::fmt::{ self, Write };
+
+static mut IS_UART_SETUP: bool = false;
 
 unsafe fn kernel_init() -> ! {
-
     let gpio = drivers::GPIORegisters::get();
     let mini_uart = drivers::MiniUARTRegisters::get();
     mini_uart.init(gpio);
-    mini_uart.write("hello, world\n".as_bytes());
+    IS_UART_SETUP = true;
+
+    kernel_main().unwrap();
+    unreachable!();
+}
+
+unsafe fn kernel_main() -> fmt::Result {
+    let mini_uart = drivers::MiniUARTRegisters::get();
+
+    writeln!(mini_uart, "Initializing kernel...")?;
+
     loop {
         let byte = mini_uart.recv();
-        mini_uart.send(byte);
+        match byte {
+            b'\r' => mini_uart.send(b'\n'),
+            127   => write!(mini_uart, "\x08 \x08")?,
+            byte  => mini_uart.send(byte),
+        }
     }
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    unsafe {
+        if IS_UART_SETUP {
+            let mini_uart = drivers::MiniUARTRegisters::get();
+            write!(mini_uart, "{}", info).unwrap_unchecked();
+        }
+    }
     utils::inifinite_loop();
 }
