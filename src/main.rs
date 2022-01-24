@@ -45,6 +45,7 @@ unsafe fn kernel_main() -> Result<!, KError> {
     let mini_uart = drivers::MiniUARTRegisters::get();
 
     mu_println!("Initializing kernel...");
+    mu_println!("[INFO] initialized in exception level {}", get_exception_level());
 
     loop {
         let byte = mini_uart.recv();
@@ -54,6 +55,12 @@ unsafe fn kernel_main() -> Result<!, KError> {
             byte  => mini_uart.send(byte),
         }
     }
+}
+
+fn get_exception_level() -> u64 {
+    use cortex_a::registers::CurrentEL;
+    let reg = CurrentEL;
+    reg.read(CurrentEL::EL)
 }
 
 #[panic_handler]
