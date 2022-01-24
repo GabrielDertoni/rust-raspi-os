@@ -4,15 +4,30 @@
 #![no_main]
 #![no_std]
 
-#![feature(fmt_internals, extern_types, format_args_nl, never_type)]
+#![feature(
+    fmt_internals,
+    extern_types,
+    format_args_nl,
+    never_type,
+    maybe_uninit_uninit_array,
+    coerce_unsized,
+    dispatch_from_dyn,
+    unsize,
+    const_mut_refs,
+)]
 
 mod utils;
 mod boot;
 mod drivers;
 mod print;
 mod globals;
+mod allocators;
+mod error;
 
 use core::panic::PanicInfo;
+
+use error::KError;
+use tock_registers::interfaces::Readable;
 
 unsafe fn kernel_init() -> ! {
     let gpio = drivers::GPIORegisters::get();
@@ -20,10 +35,13 @@ unsafe fn kernel_init() -> ! {
     mini_uart.init(gpio);
     globals::IS_MINI_UART_SETUP = true;
 
-    kernel_main().unwrap();
+    match kernel_main() {
+        Err(e) => panic!("{}", e),
+        Ok(impossible) => impossible,
+    }
 }
 
-unsafe fn kernel_main() -> Result<!, ()> {
+unsafe fn kernel_main() -> Result<!, KError> {
     let mini_uart = drivers::MiniUARTRegisters::get();
 
     mu_println!("Initializing kernel...");
