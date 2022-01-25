@@ -95,7 +95,7 @@ fn build(is_debug: bool, args: impl Iterator<Item = String>) -> Result {
 fn qemu() -> Result {
     check_qemu()?;
 
-    let mut qemu_cmd = qemu_cmd(KERNEL_BIN);
+    let mut qemu_cmd = qemu_cmd(KERNEL_ELF);
     print_command(&qemu_cmd);
 
     if qemu_cmd

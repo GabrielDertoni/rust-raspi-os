@@ -36,11 +36,12 @@ impl MiniUARTRegisters {
     }
 }
 
-static mut IN_USE: AtomicBool = AtomicBool::new(false);
+static LOCK: spin::Mutex<()> = spin::Mutex::new(());
 static mut IS_SETUP: bool = false;
 
 /// Structure that represents an exclusive handle to the Mini UART.
 pub struct MiniUART {
+    guard: spin::MutexGuard<'static, ()>,
     regs: &'static mut MiniUARTRegisters,
 }
 
@@ -54,17 +55,11 @@ impl MiniUART {
     /// already using the handle or the other thread depends on some result from this thread, **it
     /// will deadlock**.
     pub fn acquire() -> Self {
-        // SAFETY: `IN_USE` is atomic.
         unsafe {
-            // FIXME: I am not sure those orderings are correct.
-            while let Err(_) = IN_USE.compare_exchange(false, true, Ordering::SeqCst, Ordering::Acquire) {
-                // We may enter low power mode until an event occurs.
-                // NOTE: When the `MiniUART` is dropped, if there is anyone in the queue waiting
-                // for the lock, it uses the signal event (`sev`) instruction to wake up those
-                // cores.
-                cortex_a::asm::wfe();
+            MiniUART {
+                guard: LOCK.lock(),
+                regs: MiniUARTRegisters::get(),
             }
-            MiniUART { regs: MiniUARTRegisters::get() }
         }
     }
 
@@ -144,16 +139,6 @@ impl MiniUART {
         for &byte in buf {
             self.send(byte);
         }
-    }
-}
-
-impl Drop for MiniUART {
-    fn drop(&mut self) {
-        unsafe { IN_USE.store(false, Ordering::Release); }
-        // Wake the cores up. If some core was waiting for the lock, it can now acquire it.
-        // TODO: Maybe it is worth it to use some `WAITING` count and check whether there is
-        // actually some thread waiting for the lock, and only then use `sev`.
-        cortex_a::asm::sev();
     }
 }
 
