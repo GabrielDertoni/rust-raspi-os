@@ -21,7 +21,6 @@ mod utils;
 mod boot;
 mod drivers;
 mod print;
-mod globals;
 mod allocators;
 mod error;
 
@@ -52,7 +51,6 @@ unsafe fn kernel_main() -> Result<!, KError> {
     mu_println!("Initializing kernel...");
     mu_println!("[INFO] initialized in exception level {}", get_current_exception_level());
     mu_println!("[INFO] core {:x}", cortex_a::registers::MPIDR_EL1.get() & 0xff);
-    // let mut mini_uart = drivers::MiniUART::acquire();
 
     loop {
         let byte = mu_recv();
@@ -64,6 +62,7 @@ unsafe fn kernel_main() -> Result<!, KError> {
     }
 }
 
+/// Gets the current exception level
 fn get_current_exception_level() -> u64 {
     use cortex_a::registers::CurrentEL;
     let reg = CurrentEL;

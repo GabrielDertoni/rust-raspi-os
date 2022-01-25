@@ -80,11 +80,10 @@ impl MiniUART {
         self.init(gpio, 270);
     }
 
-    // FIXME: The link to the specs is not the original link. Should be replaced
-    ///
     /// Initializes the Mini UART. The baud rate divisor is used to calculate the baud rate of the
     /// UART which is based on the clock frequency. To calculate the baud rate the following
-    /// formula can be used [according to the spec](https://cs140e.sergio.bz/docs/BCM2837-ARM-Peripherals.pdf):
+    /// formula can be used [according to the spec.](https://github.com/raspberrypi/documentation/files/1888662/BCM2837-ARM-Peripherals.-.Revised.-.V2-1.pdf)
+    /// section 2.2.1:
     ///
     /// ```
     ///                  system_clock_freq
