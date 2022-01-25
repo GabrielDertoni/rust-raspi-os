@@ -6,7 +6,7 @@ use std::ops::Not;
 
 use utils::*;
 
-const ARCH: &str = "aarch64-unknown-none-softfloat";
+const TARGET: &str = "aarch64-unknown-none-softfloat";
 const KERNEL_RELEASE: &str = "target/aarch64-unknown-none-softfloat/release/kernel";
 const KERNEL_DEBUG: &str = "target/aarch64-unknown-none-softfloat/debug/kernel";
 const KERNEL_ELF: &str = "kernel.elf";
@@ -45,7 +45,7 @@ fn build(is_debug: bool, args: impl Iterator<Item = String>) -> Result {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(cargo);
     cmd.arg("rustc")
-       .args(&["--target", ARCH]);
+       .args(&["--target", TARGET]);
     if !is_debug { cmd.arg("--release"); }
     cmd.arg("--")
        .args(&["-C", &format!("link-arg=-T{}", LINKER_FILE)])
