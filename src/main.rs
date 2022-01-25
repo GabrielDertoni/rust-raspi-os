@@ -14,6 +14,7 @@
     dispatch_from_dyn,
     unsize,
     const_mut_refs,
+    bench_black_box,
 )]
 
 mod utils;
@@ -25,15 +26,20 @@ mod allocators;
 mod error;
 
 use core::panic::PanicInfo;
-
-use error::KError;
 use tock_registers::interfaces::Readable;
 
+use error::KError;
+
+use drivers::{GPIO, MiniUART, mu_recv, mu_send, mu_is_setup};
+
 unsafe fn kernel_init() -> ! {
-    let gpio = drivers::GPIORegisters::get();
-    let mini_uart = drivers::MiniUARTRegisters::get();
-    mini_uart.init(gpio);
-    globals::IS_MINI_UART_SETUP = true;
+    // This scope is necessary because the GPIO and Mini UART are beeing acquired and will be
+    // release only once dropped, which happens at the end of the scope.
+    {
+        let mut gpio = GPIO::acquire();
+        let mut mini_uart = MiniUART::acquire();
+        mini_uart.init_default(&mut gpio);
+    }
 
     match kernel_main() {
         Err(e) => panic!("{}", e),
@@ -42,22 +48,23 @@ unsafe fn kernel_init() -> ! {
 }
 
 unsafe fn kernel_main() -> Result<!, KError> {
-    let mini_uart = drivers::MiniUARTRegisters::get();
 
     mu_println!("Initializing kernel...");
-    mu_println!("[INFO] initialized in exception level {}", get_exception_level());
+    mu_println!("[INFO] initialized in exception level {}", get_current_exception_level());
+    mu_println!("[INFO] core {:x}", cortex_a::registers::MPIDR_EL1.get() & 0xff);
+    // let mut mini_uart = drivers::MiniUART::acquire();
 
     loop {
-        let byte = mini_uart.recv();
+        let byte = mu_recv();
         match byte {
-            b'\r' => mini_uart.send(b'\n'),
+            b'\r' => mu_send(b'\n'),
             127   => mu_print!("\x08 \x08"),
-            byte  => mini_uart.send(byte),
+            byte  => mu_send(byte),
         }
     }
 }
 
-fn get_exception_level() -> u64 {
+fn get_current_exception_level() -> u64 {
     use cortex_a::registers::CurrentEL;
     let reg = CurrentEL;
     reg.read(CurrentEL::EL)
@@ -65,10 +72,8 @@ fn get_exception_level() -> u64 {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    unsafe {
-        if globals::IS_MINI_UART_SETUP {
-            mu_println!("{}", info);
-        }
+    if mu_is_setup() {
+        mu_println!("{}", info);
     }
     utils::inifinite_loop();
 }

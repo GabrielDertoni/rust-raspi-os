@@ -1,31 +1,24 @@
-use core::fmt::{ self, Write };
 use crate::drivers;
 
 #[doc(hidden)]
-pub fn _mu_print(args: fmt::Arguments) {
-    unsafe {
-        if !crate::globals::IS_MINI_UART_SETUP {
-            panic!("Mini UART is expected to be initialized before calling `_print`");
-        }
-        let mini_uart = drivers::MiniUARTRegisters::get();
-        mini_uart.write_fmt(args).unwrap_unchecked();
-    }
+pub fn _print(args: core::fmt::Arguments) {
+    drivers::mini_uart::_mu_print(args);
 }
 
 #[macro_export]
-macro_rules! mu_print {
+macro_rules! print {
     ($($tok:tt)*) => ({
-        $crate::print::_mu_print(format_args!($($tok)*))
+        $crate::print::_print(format_args!($($tok)*))
     });
 }
 
 #[macro_export]
-macro_rules! mu_println {
+macro_rules! println {
     () => ({
-        $crate::print::_mu_print("\n");
+        $crate::print::_print("\n");
     });
 
     ($($tok:tt)*) => ({
-        $crate::print::_mu_print(format_args_nl!($($tok)*));
+        $crate::print::_print(format_args_nl!($($tok)*));
     });
 }
