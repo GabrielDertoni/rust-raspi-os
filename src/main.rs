@@ -46,7 +46,7 @@ unsafe fn kernel_init() -> ! {
     }
 }
 
-unsafe fn kernel_main() -> Result<!, KError> {
+fn kernel_main() -> Result<!, KError> {
 
     mu_println!("Initializing kernel...");
     mu_println!("[INFO] initialized in exception level {}", get_current_exception_level());
