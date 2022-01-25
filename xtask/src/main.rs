@@ -52,8 +52,8 @@ fn build(is_debug: bool, args: impl Iterator<Item = String>) -> Result {
        .args(&["-C", "target-cpu=cortex-a53"])
        .args(&["-C", "relocation-model=static"])
        .args(&["-D", "warnings"])
+       .args(&["-D", "missing_docs"])
        .args(args);
-        // .args(&["-D", "missing_docs"])
 
     print_command(&cmd);
 
