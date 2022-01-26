@@ -1,6 +1,6 @@
 use core::{
     fmt::{self, Write},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
 use super::{
@@ -30,19 +30,16 @@ struct MiniUARTRegisters {
 impl MiniUARTRegisters {
     const REGS_ADDR: usize = MMIO_BASE_ADDR + 0x215000;
     #[inline(always)]
-    pub unsafe fn get() -> &'static mut Self {
-        let ptr = Self::REGS_ADDR as *mut Self;
-        &mut *ptr
+    pub const fn get() -> *mut Self {
+        Self::REGS_ADDR as *mut Self
     }
 }
 
-static LOCK: spin::Mutex<()> = spin::Mutex::new(());
-static mut IS_SETUP: bool = false;
+static LOCK: spin::Mutex<Option<&'static mut MiniUARTRegisters>> = spin::Mutex::new(None);
 
 /// Structure that represents an exclusive handle to the Mini UART.
 pub struct MiniUART {
-    guard: spin::MutexGuard<'static, ()>,
-    regs: &'static mut MiniUARTRegisters,
+    guard: spin::MutexGuard<'static, Option<&'static mut MiniUARTRegisters>>,
 }
 
 impl MiniUART {
@@ -55,19 +52,12 @@ impl MiniUART {
     /// already using the handle or the other thread depends on some result from this thread, **it
     /// will deadlock**.
     pub fn acquire() -> Self {
-        unsafe {
-            MiniUART {
-                guard: LOCK.lock(),
-                regs: MiniUARTRegisters::get(),
-            }
-        }
+        MiniUART { guard: LOCK.lock() }
     }
 
     /// Checks whether the Mini UART is setup.
-    pub fn is_setup(&self) -> bool {
-        // SAFETY: This is only a read and so no race condition can occur. No other thread can
-        // write while this read occurs because that would require an exclusive reference.
-        unsafe { IS_SETUP }
+    pub fn is_setup() -> bool {
+        MiniUART::acquire().guard.is_some()
     }
 
     /// Initializes the Mini UART with the default baud rate of ~115200 @ 250 MHz
@@ -92,46 +82,50 @@ impl MiniUART {
         gpio.pin_enable(Self::TX_PIN);
         gpio.pin_enable(Self::RX_PIN);
 
-        self.regs.enables.write(1);
-        self.regs.control.write(0);
-        self.regs.ier.write(0);
-        self.regs.lcr.write(0b11); // 8-bit mode
+        // SAFETY: We are assuming that the MMIO address is correct and that the compiler won't try
+        // to do some funny things with the reference.
+        let regs = unsafe { &mut *MiniUARTRegisters::get() };
+        regs.enables.write(1);
+        regs.control.write(0);
+        regs.ier.write(0);
+        regs.lcr.write(0b11); // 8-bit mode
 
         // For rasp3, which has a clock frequency of 250 MHz
-        self.regs.baud_rate.write(baud_divisor as u32);
+        regs.baud_rate.write(baud_divisor as u32);
+        regs.control.write(3);
 
-        self.regs.control.write(3);
-
-        // SAFETY: The thread that has acquired the `MiniUART` has has exclusive access to it
-        // because this function requires `&mut`. So it is the only thread mutating this global.
-        unsafe { IS_SETUP = true; }
+        // Replace the `Option` with `Some` in order to signal that the Mini UART has been setup.
+        self.guard.replace(regs);
     }
 
     /// Sends a single byte through the UART. Spins while there is no space in the UART send
     /// buffer.
     pub fn send(&mut self, byte: u8) {
-        if !self.is_setup() {
-            panic!("Mini UART is not setup while trying to send data");
-        }
+        let regs = self
+            .guard
+            .as_mut()
+            .expect("Mini UART is not setup while trying to send data");
 
-        while self.regs.lsr.read() & 0x20 == 0 {
+        while regs.lsr.read() & 0x20 == 0 {
             cortex_a::asm::nop();
         }
 
-        self.regs.io.write(byte as u32);
+        regs.io.write(byte as u32);
     }
 
     /// Blocks until a byte is received through the UART. This function uses a spin lock to
     /// implement the blocking.
     pub fn recv(&mut self) -> u8 {
-        if !self.is_setup() {
-            panic!("Mini UART is not setup while trying to send data");
-        }
+        let regs = self
+            .guard
+            .as_mut()
+            .expect("Mini UART is not setup while trying to receive data");
 
-        while self.regs.lsr.read() & 0x1 == 0 {
+        while regs.lsr.read() & 0x1 == 0 {
             cortex_a::asm::nop();
         }
-        (self.regs.io.read() & 0xff) as u8
+
+        (regs.io.read() & 0xff) as u8
     }
 
     /// Writes a buffer of bytes to the UART.
@@ -151,8 +145,7 @@ impl core::fmt::Write for MiniUART {
 
 #[inline(always)]
 pub fn mu_is_setup() -> bool {
-    // SAFETY: This is only a read.
-    unsafe { IS_SETUP }
+    MiniUART::is_setup()
 }
 
 #[inline(always)]
@@ -168,7 +161,7 @@ pub fn mu_send(byte: u8) {
 #[doc(hidden)]
 pub fn _mu_print(args: fmt::Arguments) {
     unsafe {
-        if !IS_SETUP {
+        if !MiniUART::is_setup() {
             panic!("Mini UART is expected to be initialized before calling `_print`");
         }
         let mut mini_uart = MiniUART::acquire();
@@ -177,21 +170,17 @@ pub fn _mu_print(args: fmt::Arguments) {
 }
 
 /// Print through the Mini UART (MU)
-#[macro_export]
-macro_rules! mu_print {
-    ($($tok:tt)*) => ({
-        $crate::drivers::mini_uart::_mu_print(format_args!($($tok)*))
-    });
+pub macro mu_print($($tok:tt)*) {
+    _mu_print(format_args!($($tok)*))
 }
 
 /// Print through the Mini UART (MU) followed by a newline.
-#[macro_export]
-macro_rules! mu_println {
-    () => ({
-        $crate::drivers::mini_uart::_mu_print("\n");
-    });
+pub macro mu_println {
+    () => {
+        _mu_print(format_args!("\n"))
+    },
 
-    ($($tok:tt)*) => ({
-        $crate::drivers::mini_uart::_mu_print(format_args_nl!($($tok)*));
-    });
+    ($($tok:tt)+) => {
+        _mu_print(format_args_nl!($($tok)*));
+    }
 }

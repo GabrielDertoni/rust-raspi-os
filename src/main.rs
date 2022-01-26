@@ -3,7 +3,6 @@
 
 #![no_main]
 #![no_std]
-
 #![feature(
     fmt_internals,
     extern_types,
@@ -15,22 +14,23 @@
     unsize,
     const_mut_refs,
     bench_black_box,
+    decl_macro,
+    inline_const
 )]
-
 #![allow(dead_code, unused_imports)]
 
-mod utils;
+mod allocators;
 mod boot;
 mod drivers;
-mod print;
-mod allocators;
 mod error;
+mod print;
+mod utils;
 
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, sync::atomic::Ordering};
 
-use utils::{get_current_exception_level, get_cpu};
+use drivers::{mu_is_setup, mu_print, mu_println, mu_recv, mu_send, MiniUART, GPIO};
 use error::KError;
-use drivers::{GPIO, MiniUART, mu_recv, mu_send, mu_is_setup};
+use utils::{get_cpu, get_current_exception_level};
 
 unsafe fn kernel_init() -> ! {
     // This scope is necessary because the GPIO and Mini UART are beeing acquired and will be
@@ -48,23 +48,35 @@ unsafe fn kernel_init() -> ! {
 }
 
 fn kernel_main() -> Result<!, KError> {
-
     mu_println!("Initializing kernel...");
-    mu_println!("[INFO] initialized in exception level {}", get_current_exception_level());
+    mu_println!(
+        "[INFO] initialized in exception level {}",
+        get_current_exception_level()
+    );
     mu_println!("[INFO] core {:x}", get_cpu());
 
     unsafe {
-        boot::CHILD_TASKS[1] = Some(hello_from_cpu);
-        boot::CHILD_TASKS[2] = Some(hello_from_cpu);
-        boot::CHILD_TASKS[3] = Some(hello_from_cpu);
+        boot::CHILD_TASKS[1].store(
+            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
+            Ordering::SeqCst,
+        );
+        boot::CHILD_TASKS[2].store(
+            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
+            Ordering::SeqCst,
+        );
+        boot::CHILD_TASKS[3].store(
+            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
+            Ordering::SeqCst,
+        );
     }
+    cortex_a::asm::sev();
 
     loop {
         let byte = mu_recv();
         match byte {
             b'\r' => mu_send(b'\n'),
-            127   => mu_print!("\x08 \x08"),
-            byte  => mu_send(byte),
+            127 => mu_print!("\x08 \x08"),
+            byte => mu_send(byte),
         }
     }
 }

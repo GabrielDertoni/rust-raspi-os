@@ -4,7 +4,7 @@ pub mod gpio;
 pub mod mini_uart;
 
 pub use gpio::GPIO;
-pub use mini_uart::{mu_recv, mu_send, mu_is_setup, MiniUART};
+pub use mini_uart::{mu_is_setup, mu_print, mu_println, mu_recv, mu_send, MiniUART};
 
 pub const MMIO_BASE_ADDR: usize = 0x3F000000;
 
@@ -24,8 +24,6 @@ impl Reg32 {
     }
 
     fn read(&mut self) -> u32 {
-        unsafe {
-            core::ptr::read_volatile(&self.0)
-        }
+        unsafe { core::ptr::read_volatile(&self.0) }
     }
 }
