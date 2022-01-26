@@ -25,6 +25,7 @@ fn main() {
         Some("qemu")  => build(is_debug, args).and_then(|_| qemu()),
         Some("debug") => build(true, args).and_then(|_| qemu()),
         Some("gdb") => build(true, args).and_then(|_| qemu_gdb()),
+        Some("clippy") => clippy(),
 
         _ => {
             eprintln!("usage: cargo xtask <task>");
@@ -126,6 +127,25 @@ fn qemu_gdb() -> Result {
         .not()
     {
         return Err("Qemu failed".into());
+    }
+
+    Ok(())
+}
+
+fn clippy() -> Result {
+    let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let mut cmd = Command::new(cargo);
+    cmd.arg("clippy")
+       .args(&["--target", TARGET]);
+
+    print_command(&cmd);
+
+    if cmd
+        .status()?
+        .success()
+        .not()
+    {
+        return Err("Build failed".into());
     }
 
     Ok(())

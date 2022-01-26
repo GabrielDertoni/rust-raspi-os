@@ -35,6 +35,8 @@ impl MiniUARTRegisters {
     }
 }
 
+/// Global Mini UART lock. When the value inside the mutex is `None` it means that the Mini UART
+/// was not setup.
 static LOCK: spin::Mutex<Option<&'static mut MiniUARTRegisters>> = spin::Mutex::new(None);
 
 /// Structure that represents an exclusive handle to the Mini UART.

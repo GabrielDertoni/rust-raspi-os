@@ -55,20 +55,10 @@ fn kernel_main() -> Result<!, KError> {
     );
     mu_println!("[INFO] core {:x}", get_cpu());
 
-    unsafe {
-        boot::CHILD_TASKS[1].store(
-            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
-            Ordering::SeqCst,
-        );
-        boot::CHILD_TASKS[2].store(
-            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
-            Ordering::SeqCst,
-        );
-        boot::CHILD_TASKS[3].store(
-            core::mem::transmute::<fn(), *mut ()>(hello_from_cpu),
-            Ordering::SeqCst,
-        );
-    }
+    boot::CHILD_TASKS[1].store(hello_from_cpu as *mut (), Ordering::SeqCst);
+    boot::CHILD_TASKS[2].store(hello_from_cpu as *mut (), Ordering::SeqCst);
+    boot::CHILD_TASKS[3].store(hello_from_cpu as *mut (), Ordering::SeqCst);
+
     cortex_a::asm::sev();
 
     loop {

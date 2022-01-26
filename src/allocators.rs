@@ -60,7 +60,6 @@ impl<'a, T> KBox<'a, T> {
             KERNEL_ARENA
                 .alloc(val)
                 .expect("failed to allocate `KBox` (out of memory)")
-                .into(),
         )
     }
 }
