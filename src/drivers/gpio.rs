@@ -1,4 +1,4 @@
-use super::{ Reg32, MMIO_BASE_ADDR };
+use super::{Reg32, MMIO_BASE_ADDR};
 
 use crate::utils::delay_cycles;
 
@@ -27,7 +27,7 @@ struct GPIORegisters {
 }
 
 pub enum GPIOFunc {
-    Input  = 0b000,
+    Input = 0b000,
     Output = 0b001,
     AltFn0 = 0b100,
     AltFn1 = 0b101,
@@ -61,7 +61,9 @@ impl GPIO {
     pub fn acquire() -> Self {
         // FIXME: This should be thread safe.
         unsafe {
-            GPIO { regs: GPIORegisters::get() }
+            GPIO {
+                regs: GPIORegisters::get(),
+            }
         }
     }
 

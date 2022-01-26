@@ -44,7 +44,8 @@ impl<'data, const SIZE: usize> BoundArena<'data, SIZE> {
 const KERNEL_ARENA_SIZE: usize = 4 * 1024;
 
 pub static mut KERNEL_HEAP: [MaybeUninit<u8>; KERNEL_ARENA_SIZE] = MaybeUninit::uninit_array();
-pub static mut KERNEL_ARENA: BoundArena<'static, KERNEL_ARENA_SIZE> = unsafe { BoundArena::new(&mut KERNEL_HEAP) };
+pub static mut KERNEL_ARENA: BoundArena<'static, KERNEL_ARENA_SIZE> =
+    unsafe { BoundArena::new(&mut KERNEL_HEAP) };
 
 #[derive(Debug)]
 pub struct KBox<'a, T: ?Sized>(&'a mut T);
@@ -64,10 +65,10 @@ impl<'a, T> KBox<'a, T> {
     }
 }
 
-use core::fmt::{ self, Display };
-use core::ops::{ CoerceUnsized, DispatchFromDyn, Deref, DerefMut };
-use core::convert::{ AsRef, AsMut };
+use core::convert::{AsMut, AsRef};
+use core::fmt::{self, Display};
 use core::marker::Unsize;
+use core::ops::{CoerceUnsized, Deref, DerefMut, DispatchFromDyn};
 
 impl<'a, T: ?Sized + Display> Display for KBox<'a, T> {
     #[inline(always)]
